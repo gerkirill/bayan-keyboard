@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE keyboardmap>
+<keyboardmap version="1.0">
+    <!-- B-system treble: Q row inner, A row middle, Z row outer.
+         Offsets are relative to BaseOctave * 12; BaseOctave=4 gives Q=MIDI 48. -->
+    <mapping key="Q" note="0"/>
+    <mapping key="W" note="3"/>
+    <mapping key="E" note="6"/>
+    <mapping key="R" note="9"/>
+    <mapping key="T" note="12"/>
+    <mapping key="Y" note="15"/>
+    <mapping key="U" note="18"/>
+    <mapping key="I" note="21"/>
+    <mapping key="O" note="24"/>
+    <mapping key="P" note="27"/>
+    <mapping key="[" note="30"/>
+    <mapping key="]" note="33"/>
+    <mapping key="A" note="1"/>
+    <mapping key="S" note="4"/>
+    <mapping key="D" note="7"/>
+    <mapping key="F" note="10"/>
+    <mapping key="G" note="13"/>
+    <mapping key="H" note="16"/>
+    <mapping key="J" note="19"/>
+    <mapping key="K" note="22"/>
+    <mapping key="L" note="25"/>
+    <mapping key=";" note="28"/>
+    <mapping key="'" note="31"/>
+    <mapping key="Z" note="2"/>
+    <mapping key="X" note="5"/>
+    <mapping key="C" note="8"/>
+    <mapping key="V" note="11"/>
+    <mapping key="B" note="14"/>
+    <mapping key="N" note="17"/>
+    <mapping key="M" note="20"/>
+    <mapping key="," note="23"/>
+    <mapping key="." note="26"/>
+    <mapping key="/" note="29"/>
+    <!-- Chord triggers: major on the number row, minor on F1-F12.
+         The FluidSynth router consumes these; keep BaseOctave=4, Transpose=0. -->
+    <mapping key="1" note="36"/>
+    <mapping key="2" note="37"/>
+    <mapping key="3" note="38"/>
+    <mapping key="4" note="39"/>
+    <mapping key="5" note="40"/>
+    <mapping key="6" note="41"/>
+    <mapping key="7" note="42"/>
+    <mapping key="8" note="43"/>
+    <mapping key="9" note="44"/>
+    <mapping key="0" note="45"/>
+    <mapping key="-" note="46"/>
+    <mapping key="=" note="47"/>
+    <mapping key="F1" note="48"/>
+    <mapping key="F2" note="49"/>
+    <mapping key="F3" note="50"/>
+    <mapping key="F4" note="51"/>
+    <mapping key="F5" note="52"/>
+    <mapping key="F6" note="53"/>
+    <mapping key="F7" note="54"/>
+    <mapping key="F8" note="55"/>
+    <mapping key="F9" note="56"/>
+    <mapping key="F10" note="57"/>
+    <mapping key="F11" note="58"/>
+    <mapping key="F12" note="59"/>
+</keyboardmap>

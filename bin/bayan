@@ -1,0 +1,146 @@
+#!/usr/bin/env python3
+"""Run VMPK and its chord-capable FluidSynth together."""
+
+import configparser
+import fcntl
+import json
+import os
+from pathlib import Path
+import shutil
+import signal
+import subprocess
+import sys
+import tempfile
+import time
+
+
+HOME = Path.home()
+PROFILE = HOME / ".config/vmpk-bayan.conf"
+SOUNDFONT = Path("/usr/share/soundfonts/FluidR3_GM.sf2")
+CACHE = HOME / ".cache/vmpk-bayan"
+ROOTS = (0, 7, 2, 9, 4, 11, 6, 1, 8, 3, 10, 5)  # C G D A E B F# C# Ab Eb Bb F
+# Keep every chord independent, including notes shared with the melody.
+CHORD_CHANNELS = tuple(c for c in range(1, 32) if c not in (9, 25))[:24]
+CHANNELS = (0, *CHORD_CHANNELS)
+
+
+def router_config(bank, program):
+    lines = ["router_clear"]
+
+    def rule(kind, channel, low=None, high=None, target=None):
+        lines.extend((f"router_begin {kind}", f"router_chan 0 0 0 {channel}"))
+        if low is not None:
+            scale, offset = (1, 0) if target is None else (0, target)
+            lines.append(f"router_par1 {low} {high} {scale} {offset}")
+        lines.append("router_end")
+
+    rule("note", 0, 48, 81)
+    for index, channel in enumerate(CHORD_CHANNELS):
+        trigger = 84 + index
+        root = 48 + ROOTS[index % 12]
+        third = 4 if index < 12 else 3
+        for note in (root, root + third, root + 7):
+            rule("note", channel, trigger, trigger, note)
+
+    for channel in CHANNELS:
+        for kind in ("cc", "prog", "pbend"):
+            rule(kind, channel)
+        lines.append(f"select {channel} 1 {bank} {program}")
+    return "\n".join(lines) + "\n"
+
+
+def stop(process):
+    if process is not None and process.poll() is None:
+        process.terminate()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+
+
+def interrupted(signum, _frame):
+    raise SystemExit(128 + signum)
+
+
+def run():
+    CACHE.mkdir(parents=True, exist_ok=True)
+    with (CACHE / "session.lock").open("a") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise RuntimeError("Bayan is already running. Use the existing window.")
+
+        settings = configparser.ConfigParser(interpolation=None)
+        if not settings.read(PROFILE):
+            raise RuntimeError(f"Missing settings: {PROFILE}")
+        expected = {"BaseOctave": 4, "Transpose": 0, "Channel": 0}
+        if any(settings.getint("Preferences", k) != v for k, v in expected.items()):
+            raise RuntimeError("Chord mode needs Base Octave 4, Transpose 0, Channel 1.")
+        bank = settings.getint("Instrument0", "Bank", fallback=0)
+        program = settings.getint("Instrument0", "Program", fallback=21)
+        font = settings.get("FluidSynth", "InstrumentsDefinition", fallback=str(SOUNDFONT))
+        soundfont = Path(json.loads(font) if font.startswith('"') else font)
+        if not soundfont.is_file():
+            raise RuntimeError(f"Missing SoundFont: {soundfont}")
+
+        synth = piano = None
+        runtime = os.environ.get("XDG_RUNTIME_DIR", str(CACHE))
+        with tempfile.TemporaryDirectory(prefix="bayan-", dir=runtime) as temporary:
+            rules = Path(temporary) / "chords.fluid"
+            rules.write_text(router_config(bank, program))
+            with (CACHE / "session.log").open("w") as log:
+                try:
+                    env = {**os.environ, "PIPEWIRE_LATENCY": "256/48000"}
+                    synth = subprocess.Popen(
+                        [
+                            "fluidsynth",
+                            "-a", "pipewire", "-m", "alsa_seq",
+                            "-o", "midi.alsa_seq.id=Bayan",
+                            "-K", "32", "-r", "48000", "-z", "128", "-c", "2",
+                            "-g", "0.2", "-f", str(rules), str(soundfont),
+                        ],
+                        # Hold the local shell open without exposing a TCP server.
+                        stdin=subprocess.PIPE, stdout=log, stderr=log, env=env,
+                    )
+                    deadline = time.monotonic() + 15
+                    while True:
+                        if synth.poll() is not None:
+                            raise RuntimeError(f"FluidSynth failed; see {CACHE / 'session.log'}")
+                        ports = subprocess.check_output(
+                            ["aconnect", "-l"], text=True
+                        )
+                        if "'FLUID Synth (Bayan)'" in ports:
+                            break
+                        if time.monotonic() >= deadline:
+                            raise RuntimeError(f"Synth startup timed out; see {CACHE / 'session.log'}")
+                        time.sleep(0.1)
+                    piano = subprocess.Popen(
+                        ["vmpk", "--file", str(PROFILE)],
+                        stdout=log, stderr=log, env=env,
+                    )
+                    while piano.poll() is None:
+                        if synth.poll() is not None:
+                            raise RuntimeError(f"FluidSynth stopped; see {CACHE / 'session.log'}")
+                        time.sleep(0.2)
+                    if piano.returncode:
+                        raise RuntimeError(f"VMPK failed; see {CACHE / 'session.log'}")
+                finally:
+                    stop(piano)
+                    stop(synth)
+
+
+if __name__ == "__main__":
+    signal.signal(signal.SIGTERM, interrupted)
+    signal.signal(signal.SIGINT, interrupted)
+    try:
+        run()
+    except (OSError, RuntimeError, ValueError, configparser.Error, subprocess.SubprocessError) as error:
+        message = str(error)
+        print(message, file=sys.stderr)
+        if shutil.which("notify-send"):
+            subprocess.run(
+                ["notify-send", "--urgency=critical", "Bayan", message],
+                check=False,
+            )
+        sys.exit(1)
